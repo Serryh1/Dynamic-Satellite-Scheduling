@@ -1,58 +1,75 @@
-# DGLS source package
+# Dynamic Scheduling for Large-Scale Satellite Constellation: A Graph-based Approach
 
-This directory contains a standalone snapshot of the DGLS implementation.
-`Src/IndependentSet.cpp` implements the local search and greedy reconstruction;
-`Src/DynamicGraphCache.cpp` implements incremental graph updates. The `main.cpp`
-entry point runs DGLS only. KaMIS baselines, experiment data, and plotting code
-are not included.
+This directory contains the source code and DailyDataset generators for
+the paper. DGLS handles tasks arriving over successive time frames by building
+a conflict graph of feasible communication opportunities. It then searches for
+an independent set while preserving decisions made in earlier frames.
 
-The `daily_dataset/` directory contains the five DailyDataset instance
-generators and their output-directory details.
+## Contents
 
-## Layout
+| Path | Description |
+| --- | --- |
+| `main.cpp` | Reads the time-frame batches and runs DGLS sequentially. |
+| `Lib/`, `Src/` | Conflict-graph construction, dynamic updates, and independent-set search. |
+| `daily_dataset/` | Generators for DailyDataset instances D1-D5. |
+| `CMakeLists.txt` | C++17 build configuration. |
 
-```text
-final_code/
-|-- CMakeLists.txt       Build configuration
-|-- main.cpp             DGLS command-line entry point
-|-- Lib/                 C++ headers
-|-- Src/                 Graph construction and local-search implementation
-|-- daily_dataset/       D1-D5 data generators and their README
-|-- build/               Generated build files (ignored by Git)
-`-- results/             Generated solver output (ignored by Git)
-```
+## Datasets
 
-## Build
+DailyDataset has five scales, D1-D5, with 20, 40, 60, 80, and 100 time
+frames, respectively. Each generator creates four groups of task-window CSV
+files and a resource information file. See
+[`daily_dataset/README.md`](daily_dataset/README.md) for generation commands
+and output directories. The generators require Python 3 and NumPy.
 
-From the repository root:
+MTFDataset: [download](https://pan.baidu.com/s/1aEFW-838GZLgQL2G_FRfbA?pwd=rb6b).
 
-```sh
-cmake -S final_code -B final_code/build -DCMAKE_BUILD_TYPE=Release
-cmake --build final_code/build -j 8
-```
+## Environment
 
-## Run
+1. C++17 support；
+2. CMake VERSION 3.16 ;
 
-The input directory needs an `*_info.csv` (or `info.csv`) and numbered
-`*_batch_*.csv` files, as in `data/poisson_batches_20/group_1`.
+## Run instructions
+
+Create build folder
 
 ```sh
-SATE_GRAPH_MODE=update \
-SATE_WARM_START=1 \
-SATE_REPORT_GRAPH_METRICS=1 \
+mkdir  build
+```
+
+Then use the following commands to generate the executable:
+
+```sh
+cd build
+cmake ..
+make
+```
+
+Run DGLS with an input dataset directory and an optional output directory:
+
+```sh
+./dgls <input_folder> [output_folder]
+```
+
+The input directory must contain an `*_info.csv` (or `info.csv`) resource
+file and numbered `*_batch_*.csv` files. For example, if a D1 group is at
+`data/poisson_batches/group_1` relative to this directory, run from `build`:
+
+```sh
+SATE_GRAPH_MODE=update SATE_WARM_START=1 \
 SATE_SOLVER_TIME_LIMIT_SECONDS=600 \
-./final_code/build/dgls data/poisson_batches_20/group_1 final_code/results
+./dgls ../data/poisson_batches/group_1 ../results
 ```
 
-Results are written to `final_code/results/dgls/<frame>_MIS_result.txt`.
-The time limit is per frame and includes graph construction by default.
-Greedy reconstruction is enabled by default; `SATE_GRAPH_MODE=update` selects
-the dynamic graph implementation. The solver's default limit is 900 seconds
-when `SATE_SOLVER_TIME_LIMIT_SECONDS` is unset.
+Results are written to `results/dgls/<frame>_MIS_result.txt`.
+The time limit includes graph construction and defaults to 900 seconds per
+frame. Greedy reconstruction is enabled by default. If the output directory
+is omitted, results are written under the input directory instead.
 
-Useful optional settings:
+Optional settings:
 
-- `SATE_STOP_AFTER_FRAME=1` runs only the first frame.
-- `SATE_TARGET_FRAMES=5-10` resumes selected frames from existing results.
-- `SATE_GRAPH_MODE=scratch` rebuilds the graph at each frame.
+- `SATE_GRAPH_MODE=scratch` rebuilds the graph at each frame instead of updating it.
+- `SATE_REPORT_GRAPH_METRICS=1` appends graph and timing metrics to each result.
 - `SATE_HEURISTIC_ONLY_LIMIT=1` starts the time limit after graph construction.
+- `SATE_STOP_AFTER_FRAME=1` stops after the first frame.
+- `SATE_TARGET_FRAMES=5-10` runs selected frames using preceding results to restore state.
