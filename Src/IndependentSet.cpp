@@ -483,7 +483,6 @@ double local_search_2(Solve &solve, const chrono::steady_clock::time_point frame
     }
   }
   random_add_onetimeframe(solve);
-  size_t iter = 0;
   size_t cnt = 0;
   size_t last_ans = solve.s.count();
   dynamic_bitset<> best_s = solve.s;
@@ -539,8 +538,6 @@ double local_search_2(Solve &solve, const chrono::steady_clock::time_point frame
   save_incumbent();
   const auto deadline = search_start + max_time;
   const int maxIter = std::min(10'000, solve.n / 2);
-  const size_t stagnation_limit = std::max<size_t>(10'000, 20 * solve.n);
-  size_t stagnation = 0;
   vector<pair<double, size_t>> improvements;
   const bool no_greedy_reconstruction = disable_greedy_reconstruction();
   size_t one_for_one_swaps = 0;
@@ -549,15 +546,14 @@ double local_search_2(Solve &solve, const chrono::steady_clock::time_point frame
   int last_result = solve.s.count();
   std::unordered_map<int, int> freq;
   std::vector<int> add_fre;
-  iter = 0;
   while (chrono::steady_clock::now() < deadline) {
     cnt = 0;
-    while (cnt < maxIter && stagnation < stagnation_limit) {
+    while (cnt < maxIter &&
+           (!solve.swap_set.empty() ||
+            (no_greedy_reconstruction && !solve.fit_set.empty()))) {
       if ((cnt & 255) == 0 && chrono::steady_clock::now() >= deadline) {
         break;
       }
-      cnt++;
-      iter++;
       if (solve.s.count() > last_ans) {
         last_ans = solve.s.count();
         best_s = solve.s;
@@ -565,7 +561,6 @@ double local_search_2(Solve &solve, const chrono::steady_clock::time_point frame
             chrono::steady_clock::now() - search_start).count();
         improvements.emplace_back(hitting_seconds, last_ans);
         save_incumbent();
-        stagnation = 0;
         if (last_ans == solve.g.task_num) {
           break;
         }
@@ -576,7 +571,7 @@ double local_search_2(Solve &solve, const chrono::steady_clock::time_point frame
         solve.add(v);
         ++direct_additions;
         freq[v]++;
-        ++stagnation;
+        ++cnt;
         continue;
       }
       if (solve.swap_set.empty()) {
@@ -591,6 +586,7 @@ double local_search_2(Solve &solve, const chrono::steady_clock::time_point frame
       }
       // solve.add_tabu(c);
       add_fre.clear();
+      size_t reconstruction_size = 0;
       if (no_greedy_reconstruction) {
         int replacement = -1;
         size_t choices = 0;
@@ -609,20 +605,9 @@ double local_search_2(Solve &solve, const chrono::steady_clock::time_point frame
         }
       } else {
         greedy_reconstruct(solve, c, add_fre);
+        reconstruction_size = add_fre.size();
         random_add_1(solve, add_fre);
       }
-      std::vector<int> vv;
-
-      //   if (iter >= solve.fit_set.size()) {
-      //     iter = 0;
-      //     vv = Greedy_search(solve, c);
-      //     for (const auto &i : vv) {
-      //       freq[i]++;
-      //       if (freq[i] > last_result) {
-      //         freq[i] = 0;
-      //       }
-      //     }
-      //   }
 
       for (const auto &i : add_fre) {
         freq[i]++;
@@ -631,14 +616,13 @@ double local_search_2(Solve &solve, const chrono::steady_clock::time_point frame
         }
       }
       // solve.del_tabu(c);
-      ++stagnation;
+      cnt = reconstruction_size > 1 ? 0 : cnt + 1;
     }
     if (chrono::steady_clock::now() >= deadline) break;
     if (last_ans == solve.g.task_num) {
       std::this_thread::sleep_until(deadline);
       break;
     }
-    const bool stalled = stagnation >= stagnation_limit;
     if (solve.s.count() > last_result) {
       last_result = solve.s.count();
       if (solve.s.count() > last_ans) { // MODIFIED: do not overwrite a better
@@ -650,7 +634,7 @@ double local_search_2(Solve &solve, const chrono::steady_clock::time_point frame
         improvements.emplace_back(hitting_seconds, last_ans);
         save_incumbent();
       }
-      if (!stalled) continue;
+      continue;
     }
     int sum = 0;
     vector<int> candidate, random_del;
@@ -677,7 +661,6 @@ double local_search_2(Solve &solve, const chrono::steady_clock::time_point frame
     if (random_del.empty()) {
       if (!solve.fit_set.empty()) random_add_onetimeframe(solve);
       else std::this_thread::sleep_until(deadline);
-      stagnation = 0;
       continue;
     }
 
@@ -689,7 +672,6 @@ double local_search_2(Solve &solve, const chrono::steady_clock::time_point frame
     for (int i = 0; i < min(delete_num, siz); ++i) {
       solve.del(random_del[i]);
     }
-    stagnation = 0;
   }
   if (solve.s.count() > last_ans) {
     last_ans = solve.s.count();
